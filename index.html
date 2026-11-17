@@ -6061,7 +6061,8 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
    leaves the macro); the wheel over the selected one changes how many times it plays; a double click
    opens its full editor. Sets stay closed while something passes over them: a short pause inside one
    opens it (the sets a piece comes from are open from the start). A bubble let go on top of another one
-   joins it in a set - only while Ctrl is held. The only bubble of a set carries the set with it.
+   joins it in a set - only while Ctrl is held. A bubble dragged out of a set leaves the set; the set itself
+   is dragged by its name or its edge. A set left with nothing in it goes away.
 
    The stage only knows step lines (see structure.js): it reads them with getLines() and hands the changed
    list to setLines(). */
@@ -6436,16 +6437,8 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
   P.carry = function (d) {
     if (d.carried) { d.carried.style.left = (d.mx - d.gx) + "px"; d.carried.style.top = (d.my - d.gy) + "px"; }
   };
-  P.carrierOf = function (n) {           // what moves when n is dragged: n - or the set it is the only thing of
-    var found = T.siblingsOf(this.roots, n), box = null;
-    if (!found || found[0] === this.roots || found[0].length !== 1) { return n; }
-    T.walk(this.roots).some(function (b) { if (b.kind === "block" && b.children === found[0]) { box = b; return true; } return false; });
-    return box && box.isBox() ? this.carrierOf(box) : n;
-  };
   P.lift = function (d) {
     /* pick the piece up: a gap of its size stays behind and follows the pointer through the macro */
-    var up = this.carrierOf(d.node);
-    if (up !== d.node) { d.node = up; this.select(up); }
     var n = d.node, el = this.els.get(n), r = el.getBoundingClientRect(), found = T.siblingsOf(this.roots, n);
     var path = T.pathOf(this.roots, n) || [], self = this;
     d.open = new Set();                  // the sets it comes from are open: it can move about inside them
