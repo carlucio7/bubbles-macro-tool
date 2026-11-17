@@ -6091,8 +6091,8 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
     var g = ms < 10 ? 1 : ms < 100 ? 10 : ms < 1000 ? 100 : ms < 60000 ? 1000 : ms < HOUR ? 60000 : HOUR;
     return (Math.floor(ms / g) + 1) * g;
   }
-  function waitDown(ms) {                // the next wait down
-    var g = ms > HOUR ? HOUR : ms > 60000 ? 60000 : ms > 100 ? 100 : ms > 10 ? 10 : 1;
+  function waitDown(ms) {                // the next wait down: the same grid as going up
+    var g = ms > HOUR ? HOUR : ms > 60000 ? 60000 : ms > 1000 ? 1000 : ms > 100 ? 100 : ms > 10 ? 10 : 1;
     return Math.max(1, (Math.ceil(ms / g) - 1) * g);
   }
   function waitLines(ms) {
@@ -6883,9 +6883,9 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
     return n === f ? one : one * n.count + n.gap * (n.count - 1);
   };
   P.nudgeWait = function (n, step) {
-    /* a wait one notch longer or shorter (step: notches, + longer). Up: 1 ms steps to 10 ms, 10 ms to 100 ms,
-       100 ms to 1 s, then whole seconds to 1 min, whole minutes to 1 h, whole hours. Down: 100 ms steps (10 ms
-       under 100 ms, 1 ms under 10 ms) - and whole minutes / hours above 1 min / 1 h. -> the new node or null */
+    /* a wait one notch longer or shorter (step: notches, + longer), the same steps both ways: 1 ms up to
+       10 ms, 10 ms up to 100 ms, 100 ms up to 1 s, whole seconds up to 1 min, whole minutes up to 1 h, then
+       whole hours. -> the new node or null */
     var ms = this.waitMs(n), fresh = ms;
     if (ms === null) { return null; }
     for (var k = 0; k < Math.abs(step); k++) { fresh = step > 0 ? waitUp(fresh) : waitDown(fresh); }
