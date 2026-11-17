@@ -252,6 +252,7 @@ input.name { flex: 1 1 22ch; font: 700 17px var(--round); padding: 6px 12px; }
 .box-empty { color: var(--muted); font-size: 12px; padding: 8px 20px; }
 .piece.ghost { border: 2px dashed var(--ghost); border-radius: calc(var(--z) * 16px); cursor: default; }
 .piece.ghost.round { border-radius: 50%; }
+.piece.ghost.slot { width: calc(var(--z) * 10px); border: none; border-radius: 99px; background: var(--accent); opacity: .75; box-shadow: 0 0 0 calc(var(--z) * 4px) rgb(123 92 250 / .22); }
 .piece.sel > .bub, .piece.sel > .minis { outline: 3px solid var(--accent); outline-offset: 3px; border-radius: 50%; }
 .piece.box.sel { outline: 3px solid var(--accent); outline-offset: 2px; }
 .piece.box.opening { outline: 2px dashed var(--accent); outline-offset: 3px; }
@@ -6068,10 +6069,13 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
 
    Dragging a bubble, a bunch or a whole set changes the order of the macro (dragged out of the stage, it
    leaves the macro); the wheel over the selected one changes how many times it plays; a double click
-   opens its full editor. Sets stay closed while something passes over them: a short pause inside one
-   opens it (the sets a piece comes from are open from the start). A bubble let go on top of another one
-   joins it in a set - only while Ctrl is held. A bubble dragged out of a set leaves the set; the set itself
-   is dragged by its name or its edge. A set left with nothing in it goes away.
+   opens its full editor. While something is carried, the place it would land is a thin bar that only moves
+   where the pointer stops (nothing slides away while it passes by). Sets stay closed while something
+   passes over them: standing still over one opens it, and the piece then goes among its pieces where the
+   pointer is - at its left edge first, at its right edge last (the sets a piece comes from are open from
+   the start; an open set closes only once the pointer is really out of it). A bubble let go on top of
+   another one joins it in a set - only while Ctrl is held. A bubble dragged out of a set leaves the set;
+   the set itself is dragged by its name or its edge. A set left with nothing in it goes away.
 
    The stage only knows step lines (see structure.js): it reads them with getLines() and hands the changed
    list to setLines(). */
@@ -6081,7 +6085,8 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
   var MAX_MINIS = 160;         // a bunch shows at most this many bubbles (the number beside it is always exact)
   var ZOOMS = [1.8, 1.6, 1.45, 1.3, 1.15, 1.0, 0.9, 0.8, 0.7, 0.62, 0.55, 0.48];     // how big the stage draws: the first that fits
   var GOLDEN = Math.PI * (3 - Math.sqrt(5));
-  var DWELL = 450;             // ms the pointer stays inside a closed set before the set opens to take the piece
+  var DWELL = 550;             // ms the pointer stands still over a closed set before the set opens to take the piece
+  var REST = 200;              // ms the pointer stands still before the gap opens there (nothing slides away while it passes)
   var ctrlHeld = false, dragging = null;       // Ctrl (or Cmd) right now; the stage something is being dragged on
   function ctrlNow(on) {
     if (on === ctrlHeld) { return; }
@@ -6460,7 +6465,7 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
     d.open = new Set();                  // the sets it comes from are open: it can move about inside them
     path.slice(0, -1).forEach(function (i, k) { d.open.add(T.nodeAtPath(self.roots, path.slice(0, k + 1))); });
     dragging = this;
-    var ghost = new T.Node("ghost"), gel = h("div.piece.ghost", { style: { width: r.width + "px", height: r.height + "px" } });
+    var ghost = new T.Node("ghost"), gel = h("div.piece.ghost.slot", { style: { height: r.height + "px" } });
     gel._node = ghost;
     this.els.set(ghost, gel);
     found[0][found[1]] = ghost;
@@ -6510,12 +6515,14 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
     this.dropAt(x, y);
   };
   P.canJoin = function (d) { var n = d.node; return !d.apart && (!n || (!n.isBox() && n.kind !== "wait")); };
-  P.waitOn = function (box) {            // the pointer rests inside a closed set: it opens after DWELL ms
+  P.waitOn = function (box, x, y) {
+    /* the pointer is over a closed set: once it has stood still there (within a few pixels) for DWELL ms,
+       the set opens. (Passing over a big set on the way somewhere else does not open it.) */
     var self = this, d = this.drag;
-    if (d.waiting === box) { return; }
+    if (d.waiting === box && (!box || Math.hypot(x - d.wx, y - d.wy) <= 12)) { return; }
     clearTimeout(d.timer);
-    if (d.waiting && this.els.get(d.waiting)) { this.els.get(d.waiting).classList.remove("opening"); }
-    d.waiting = box;
+    if (d.waiting && d.waiting !== box && this.els.get(d.waiting)) { this.els.get(d.waiting).classList.remove("opening"); }
+    d.waiting = box; d.wx = x; d.wy = y;
     if (!box) { return; }
     this.els.get(box).classList.add("opening");
     d.timer = setTimeout(function () {
@@ -6523,6 +6530,7 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
       d.waiting = null;
       self.els.get(box).classList.remove("opening");
       d.open.add(box);
+      d.openAt.set(box, self.rect(self.els.get(box)));     // (where it was when it opened: it stays open there even if it moves)
       self.retarget();
     }, DWELL);
   };
@@ -6559,45 +6567,75 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
     });
     return out;
   };
-  P.dropSpot = function (x, y) {
-    /* [list of siblings, index] where the piece in the hand would land at this point - or null: leave the gap
-       where it is. Sets are closed: while the pointer is over a closed set the gap does not move (moving it
-       next to the set would push the set away from the pointer), and a pause there (waitOn) opens the set -
-       then the gap goes in. The sets the piece came from are open from the start; going out of a set (its
-       edge counts as out) closes it again. */
-    var self = this, d = this.drag, nodes = this.roots, edge = 11 * this.z, chain = [], waiting = null;
-    if (!d.open) { d.open = new Set(); }
-    for (;;) {
-      var inside = null;
-      nodes.some(function (c) {
-        if (!c.isBox()) { return false; }
-        var r = self.rect(self.els.get(c)), m = d.open.has(c) ? edge : 0;
-        if (r.left + m <= x && x <= r.right - m && r.top <= y && y <= r.bottom) { inside = c; return true; }
-        return false;
-      });
-      if (!inside) { break; }
-      if (!d.open.has(inside)) { waiting = inside; break; }
-      chain.push(inside);
-      nodes = inside.children;
-    }
-    d.open.forEach(function (b) { if (chain.indexOf(b) < 0) { d.open.delete(b); } });
-    this.waitOn(waiting);
-    this.paintOpen(chain);
-    this.dragWords(chain);
-    if (waiting) { return null; }
-    var els = nodes.map(function (c) { return self.els.get(c); }), rows = this.rowsOf(els), index = 0;
+  P.levelAt = function (nodes, x, y) {
+    /* in one list of siblings: {index: where the piece would go by the middles of its neighbours, under: the
+       sibling under the pointer (its row, its width), r: its place}. A pointer above the first row counts
+       as in it; one below the last row, as after everything. */
+    var self = this, els = nodes.map(function (c) { return self.els.get(c); }), rows = this.rowsOf(els), row = null, index = 0, under = null, ur = null;
+    for (var i = 0; i < nodes.length; i++) { if (rows[i][0].bottom + 6 > y) { row = rows[i][0]; break; } }
     nodes.forEach(function (c, i) {
       if (c.kind === "ghost") { return; }
-      var row = rows[i][0], r = rows[i][1];
-      if (row.bottom + 6 <= y || (row.top - 6 <= y && r.left + r.width / 2 < x)) { index += 1; }
+      var rw = rows[i][0], r = rows[i][1];
+      if (rw !== row) { if (!row || rw.bottom <= row.top) { index += 1; } return; }
+      if (r.left + r.width / 2 < x) { index += 1; }
+      if (r.left <= x && x <= r.right) { under = c; ur = r; }
     });
-    return [nodes, index];
+    return { index: index, under: under, r: ur };
   };
-  P.dropAt = function (x, y) {
-    var self = this, d = this.drag, ghost = d.ghost, spot = this.dropSpot(x, y);
-    if (!spot) { return; }
-    var nodes = spot[0], index = spot[1], now = T.siblingsOf(this.roots, ghost), rest = nodes.filter(function (c) { return c !== ghost; });
-    if (now && now[0] === nodes && now[1] === index) { return; }                 // already there
+  P.dropSpot = function (x, y) {
+    /* [list of siblings, index] where the piece in the hand would land at this point - or null: leave the gap
+       where it is.
+         over a closed set (any part of it)   the gap stays put; a pause (DWELL) opens the set
+         inside an open set                  the gap goes among its pieces, by their middles: near its left
+                                             edge = first, near its right edge = last
+         anywhere else                       among the pieces of that level, by their middles
+       An open set stays open until the pointer is really out of it (a small margin around it counts as in):
+       its edges are where pieces go first and last, not a way out. The sets the piece came from are open
+       from the start. */
+    var self = this, d = this.drag, nodes = this.roots, m = 10 * this.z, chain = [], over = null, at;
+    if (!d.open) { d.open = new Set(); }
+    if (!d.openAt) { d.openAt = new Map(); }
+    for (;;) {
+      var opened = null;
+      nodes.forEach(function (c) {
+        if (opened || !d.open.has(c)) { return; }
+        [self.rect(self.els.get(c)), d.openAt.get(c)].forEach(function (r) {
+          if (r && r.left - m <= x && x <= r.right + m && r.top - m <= y && y <= r.bottom + m) { opened = c; }
+        });
+      });
+      if (opened) { chain.push(opened); nodes = opened.children; continue; }
+      at = this.levelAt(nodes, x, y);
+      if (at.under && at.under.isBox() && at.r.top <= y && y <= at.r.bottom) { over = at.under; }
+      break;
+    }
+    d.open.forEach(function (b) { if (chain.indexOf(b) < 0) { d.open.delete(b); d.openAt.delete(b); } });
+    this.waitOn(over, x, y);
+    this.paintOpen(chain);
+    this.dragWords(chain);
+    return over ? null : [nodes, at.index];
+  };
+  P.settle = function (spot, x, y) {
+    /* true once the pointer has stood still (within a few pixels) for REST ms with this spot under it: the
+       gap only opens where the pointer stops - pieces don't slide away while it passes by */
+    var self = this, d = this.drag, r = d.rest;
+    if (!spot) { clearTimeout(d.restTimer); d.rest = null; return false; }
+    if (r && r.nodes === spot[0] && r.index === spot[1] && (r.done || Math.hypot(x - r.x, y - r.y) <= 8)) { return r.done; }
+    clearTimeout(d.restTimer);
+    var mine = d.rest = { nodes: spot[0], index: spot[1], x: x, y: y, done: false };
+    d.restTimer = setTimeout(function () { if (self.drag === d && d.rest === mine) { mine.done = true; self.retarget(); } }, REST);
+    return false;
+  };
+  P.dropAt = function (x, y, now) {
+    /* the gap goes where the piece would land at this point - once the pointer rests there, or at once (now:
+       the piece is being let go, and it lands where the pointer is) */
+    var d = this.drag, spot = this.dropSpot(x, y);
+    if (!spot) { this.settle(null); return; }
+    var at = T.siblingsOf(this.roots, d.ghost);
+    if (at && at[0] === spot[0] && at[1] === spot[1]) { this.settle(null); return; }      // already there
+    if (now || this.settle(spot, x, y)) { this.settle(null); this.placeGhost(spot); }
+  };
+  P.placeGhost = function (spot) {
+    var self = this, ghost = this.drag.ghost, nodes = spot[0], index = spot[1], now = T.siblingsOf(this.roots, ghost), rest;
     U.flip(this.pieces(), function () {
       if (now) { now[0].splice(now[1], 1); }
       rest = nodes.filter(function (c) { return c !== ghost; });
@@ -6621,8 +6659,10 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
     if (d.join) { this.els.get(d.join).classList.remove("join"); d.join = null; }
     d.under = null;
     this.waitOn(null);
+    this.settle(null);
     this.paintOpen([]);
     if (d.open) { d.open.clear(); }
+    if (d.openAt) { d.openAt.clear(); }
     this.dropGhost(d);
     d.carried.classList.add("away");
     this.say(null, _("Let go to take it out of the macro."));
@@ -6631,7 +6671,7 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
     d.away = false;
     d.carried.classList.remove("away");
     d.ghost = new T.Node("ghost");
-    var gel = h("div.piece.ghost", { style: { width: d.carried.offsetWidth + "px", height: d.carried.offsetHeight + "px" } });
+    var gel = h("div.piece.ghost.slot", { style: { height: d.carried.offsetHeight + "px" } });
     gel._node = d.ghost;
     this.els.set(d.ghost, gel);
     this.roots.push(d.ghost);
@@ -6642,7 +6682,7 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
     var d = this.drag;
     this.drag = null;
     if (dragging === this) { dragging = null; }
-    if (d) { clearTimeout(d.timer); }
+    if (d) { clearTimeout(d.timer); clearTimeout(d.restTimer); }
     this.el.classList.remove("dragging");
     U.clear(this.fxEl);
     if (d && d.id !== undefined) { try { this.el.releasePointerCapture(d.id); } catch (e) { /* fine */ } }
@@ -6657,6 +6697,7 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
       this.commit(null);
       return;
     }
+    this.landNow(d);
     if (d.join) {                        // let go on another bubble: the two form a set
       found = T.siblingsOf(this.roots, d.ghost);
       if (found) { found[0].splice(found[1], 1); }
@@ -6705,7 +6746,7 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
     if (this.player) { this.player.stop(); }
     if (!(this.drag && this.drag.outside)) {
       var ghost = new T.Node("ghost"), size = Math.round(92 * this.unit());
-      var gel = h("div.piece.ghost.round", { style: { width: size + "px", height: size + "px" } });
+      var gel = h("div.piece.ghost.slot", { style: { height: size + "px" } });
       gel._node = ghost;
       this.els.set(ghost, gel);
       this.roots.push(ghost);
@@ -6720,9 +6761,13 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
     this.aim(this.drag, x, y);
     return true;
   };
+  P.landNow = function (d) {             // let go: the piece lands where the pointer is, even if the gap had not caught up yet
+    if (!d.join && !(ctrlHeld && this.canJoin(d)) && d.mx !== undefined) { this.dropAt(d.mx, d.my, true); }
+  };
   P.take = function (lines) {            // it was dropped here: these step lines go where the gap is
     var d = this.drag;
     if (!d || !d.outside) { return false; }
+    this.landNow(d);
     var fresh = T.parse(lines.slice()), found = T.siblingsOf(this.roots, d.ghost);
     if (d.join && fresh.length) {        // dropped on a bubble: a set of the two
       found[0].splice(found[1], 1);
