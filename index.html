@@ -6085,8 +6085,8 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
   var MAX_MINIS = 160;         // a bunch shows at most this many bubbles (the number beside it is always exact)
   var ZOOMS = [1.8, 1.6, 1.45, 1.3, 1.15, 1.0, 0.9, 0.8, 0.7, 0.62, 0.55, 0.48];     // how big the stage draws: the first that fits
   var GOLDEN = Math.PI * (3 - Math.sqrt(5));
-  var DWELL = 550;             // ms the pointer stands still over a closed set before the set opens to take the piece
-  var REST = 200;              // ms the pointer stands still before the gap opens there (nothing slides away while it passes)
+  var DWELL = 440;             // ms the pointer stands still over a closed set before the set opens to take the piece
+  var REST = 160;              // ms the pointer stands still before the gap opens there (nothing slides away while it passes)
   var ctrlHeld = false, dragging = null;       // Ctrl (or Cmd) right now; the stage something is being dragged on
   function ctrlNow(on) {
     if (on === ctrlHeld) { return; }
