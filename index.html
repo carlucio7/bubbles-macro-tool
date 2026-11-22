@@ -4268,6 +4268,13 @@ window.Bubbles.PT = {" (copy)":" (cópia)"," (edited)":" (editado)"," and a shor
       if (o.oninput) { o.oninput(input.value); }
       input.focus();
     }
+    input.addEventListener("keydown", function (e) {
+      /* keys that write nothing (F1-F24, Scroll Lock, Pause...) pressed in the field go in as their names - and
+         the browser doesn't get them: F3 would open Chrome's "Find", F5 reload the page */
+      if (e.ctrlKey || e.altKey || e.metaKey || !/^(F\d{1,2}|ScrollLock|Pause|NumLock|ContextMenu|Insert)$/.test(e.code) || !K.CODE[e.code]) { return; }
+      e.preventDefault(); e.stopPropagation();
+      got(K.CODE[e.code]);
+    });
     var el = row(input, h("datalist", { id: id }, o.append ? null : names.map(function (n) { return h("option", { value: n }); })),
                  h("button.btn", { type: "button", onclick: function () { captureKey().then(got); } }, _("Press the key…")),
                  h("button.btn", { type: "button", title: _("On-screen keyboard"), onclick: function () {
